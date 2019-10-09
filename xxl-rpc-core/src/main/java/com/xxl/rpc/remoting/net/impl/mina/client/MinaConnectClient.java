@@ -9,12 +9,13 @@ import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
 import com.xxl.rpc.serialize.Serializer;
 import com.xxl.rpc.util.IpUtil;
 import org.apache.mina.core.future.ConnectFuture;
+import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFactory;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
 import org.apache.mina.filter.codec.ProtocolDecoder;
 import org.apache.mina.filter.codec.ProtocolEncoder;
-import org.apache.mina.transport.socket.DefaultSocketSessionConfig;
+import org.apache.mina.transport.socket.SocketSessionConfig;
 import org.apache.mina.transport.socket.nio.NioSocketConnector;
 
 import java.net.InetSocketAddress;
@@ -35,12 +36,37 @@ public class MinaConnectClient extends ConnectClient {
 	@Override
 	public void init(String address, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) {
 
+		// host port
 		Object[] array = IpUtil.parseIpPort(address);
 		String host = (String) array[0];
 		int port = (int) array[1];
 
 
+		/*KeepAliveFilter heartBeat = new KeepAliveFilter(new KeepAliveMessageFactory() {
+			@Override
+			public boolean isRequest(IoSession ioSession, Object message) {
+				return Beat.BEAT_ID.equalsIgnoreCase(((XxlRpcResponse) message).getRequestId());	// beat request
+			}
+			@Override
+			public boolean isResponse(IoSession ioSession, Object message) {
+				return Beat.BEAT_ID.equalsIgnoreCase(((XxlRpcRequest) message).getRequestId());		// beat response
+			}
+			@Override
+			public Object getRequest(IoSession ioSession) {
+				return Beat.BEAT_PONG;
+			}
+			@Override
+			public Object getResponse(IoSession ioSession, Object request) {
+				return Beat.BEAT_PING;
+			}
+		}, IdleStatus.BOTH_IDLE, KeepAliveRequestTimeoutHandler.CLOSE);
+		heartBeat.setForwardEvent(true);
+		heartBeat.setRequestInterval(10);
+		heartBeat.setRequestTimeout(10);*/	// TODO，mina beat
+
+		// init
 		connector = new NioSocketConnector();
+		//connector.getFilterChain().addLast("heartbeat", heartBeat);
 		connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ProtocolCodecFactory() {
 			@Override
 			public ProtocolEncoder getEncoder(IoSession session) throws Exception {
@@ -52,13 +78,14 @@ public class MinaConnectClient extends ConnectClient {
 			}
 		}));
 		connector.setHandler(new MinaClientHandler(xxlRpcInvokerFactory));
-		connector.setConnectTimeoutMillis(5000);
-		
-		DefaultSocketSessionConfig sessionConfiguration = (DefaultSocketSessionConfig) connector.getSessionConfig();
-		sessionConfiguration.setTcpNoDelay(true);
-		sessionConfiguration.setKeepAlive(true);
-		//sessionConfiguration.setReuseAddress(true);
-		sessionConfiguration.setSoLinger(-1);
+		connector.setConnectTimeoutMillis(10000);
+
+		SocketSessionConfig socketSessionConfig = (SocketSessionConfig) connector.getSessionConfig();
+		socketSessionConfig.setTcpNoDelay(true);
+		socketSessionConfig.setKeepAlive(true);
+		//socketSessionConfig.setReuseAddress(true);
+		socketSessionConfig.setSoLinger(-1);
+		socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE, 60);
 
 		ConnectFuture future = connector.connect(new InetSocketAddress(host, port));
 		future.awaitUninterruptibly(5, TimeUnit.SECONDS);

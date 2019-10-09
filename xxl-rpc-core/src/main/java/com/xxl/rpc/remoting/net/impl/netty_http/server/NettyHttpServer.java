@@ -1,6 +1,7 @@
 package com.xxl.rpc.remoting.net.impl.netty_http.server;
 
 import com.xxl.rpc.remoting.net.Server;
+import com.xxl.rpc.remoting.net.params.Beat;
 import com.xxl.rpc.remoting.provider.XxlRpcProviderFactory;
 import com.xxl.rpc.util.ThreadPoolUtil;
 import io.netty.bootstrap.ServerBootstrap;
@@ -13,8 +14,9 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
-
+import io.netty.handler.timeout.IdleStateHandler;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * netty_http
@@ -34,7 +36,10 @@ public class NettyHttpServer extends Server  {
             public void run() {
 
                 // param
-                final ThreadPoolExecutor serverHandlerPool = ThreadPoolUtil.makeServerThreadPool(NettyHttpServer.class.getSimpleName());
+                final ThreadPoolExecutor serverHandlerPool = ThreadPoolUtil.makeServerThreadPool(
+                        NettyHttpServer.class.getSimpleName(),
+                        xxlRpcProviderFactory.getCorePoolSize(),
+                        xxlRpcProviderFactory.getMaxPoolSize());
                 EventLoopGroup bossGroup = new NioEventLoopGroup();
                 EventLoopGroup workerGroup = new NioEventLoopGroup();
 
@@ -45,13 +50,12 @@ public class NettyHttpServer extends Server  {
                             .channel(NioServerSocketChannel.class)
                             .childHandler(new ChannelInitializer<SocketChannel>() {
                                 @Override
-                                public void initChannel(SocketChannel ch) throws Exception {
-                                    /*ch.pipeline().addLast(new HttpResponseEncoder());
-                                    ch.pipeline().addLast(new HttpRequestDecoder());*/
-                                    /*ch.pipeline().addLast(new ChunkedWriteHandler());*/
-                                    ch.pipeline().addLast(new HttpServerCodec());
-                                    ch.pipeline().addLast(new HttpObjectAggregator(5*1024*1024));  // merge request & reponse to FULL
-                                    ch.pipeline().addLast(new NettyHttpServerHandler(xxlRpcProviderFactory, serverHandlerPool));
+                                public void initChannel(SocketChannel channel) throws Exception {
+                                    channel.pipeline()
+                                            .addLast(new IdleStateHandler(0, 0, Beat.BEAT_INTERVAL * 3, TimeUnit.SECONDS))  // beat 3N, close if idle
+                                            .addLast(new HttpServerCodec())
+                                            .addLast(new HttpObjectAggregator(5 * 1024 * 1024))  // merge request & reponse to FULL
+                                            .addLast(new NettyHttpServerHandler(xxlRpcProviderFactory, serverHandlerPool));
                                 }
                             })
                             .childOption(ChannelOption.SO_KEEPALIVE, true);

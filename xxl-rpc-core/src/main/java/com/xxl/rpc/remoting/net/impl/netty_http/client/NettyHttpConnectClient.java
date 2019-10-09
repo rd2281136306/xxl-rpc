@@ -2,6 +2,7 @@ package com.xxl.rpc.remoting.net.impl.netty_http.client;
 
 import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
 import com.xxl.rpc.remoting.net.common.ConnectClient;
+import com.xxl.rpc.remoting.net.params.Beat;
 import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
 import com.xxl.rpc.serialize.Serializer;
 import io.netty.bootstrap.Bootstrap;
@@ -14,9 +15,11 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.timeout.IdleStateHandler;
 
 import java.net.URI;
 import java.net.URL;
+import java.util.concurrent.TimeUnit;
 
 /**
  * netty_http
@@ -31,9 +34,11 @@ public class NettyHttpConnectClient extends ConnectClient {
     private Serializer serializer;
     private String address;
     private String host;
+    private DefaultFullHttpRequest beatRequest;
 
     @Override
     public void init(String address, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) throws Exception {
+        final NettyHttpConnectClient thisClient = this;
 
         if (!address.toLowerCase().startsWith("http")) {
             address = "http://" + address;	// IP:PORT, need parse to url
@@ -53,11 +58,10 @@ public class NettyHttpConnectClient extends ConnectClient {
                     @Override
                     public void initChannel(SocketChannel channel) throws Exception {
                         channel.pipeline()
-                                /*.addLast(new HttpResponseDecoder())
-                                .addLast(new HttpRequestEncoder())*/
+                                .addLast(new IdleStateHandler(0,0, Beat.BEAT_INTERVAL, TimeUnit.SECONDS))   // beat N, close if fail
                                 .addLast(new HttpClientCodec())
                                 .addLast(new HttpObjectAggregator(5*1024*1024))
-                                .addLast(new NettyHttpClientHandler(xxlRpcInvokerFactory, serializer));
+                                .addLast(new NettyHttpClientHandler(xxlRpcInvokerFactory, serializer, thisClient));
                     }
                 })
                 .option(ChannelOption.SO_KEEPALIVE, true);
@@ -73,7 +77,6 @@ public class NettyHttpConnectClient extends ConnectClient {
 
         logger.debug(">>>>>>>>>>> xxl-rpc netty client proxy, connect to server success at host:{}, port:{}", host, port);
     }
-
 
     @Override
     public boolean isValidate() {
@@ -100,9 +103,9 @@ public class NettyHttpConnectClient extends ConnectClient {
     public void send(XxlRpcRequest xxlRpcRequest) throws Exception {
         byte[] requestBytes = serializer.serialize(xxlRpcRequest);
 
-        DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, new URI(address).toASCIIString(), Unpooled.wrappedBuffer(requestBytes));
+        DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, new URI(address).getRawPath(), Unpooled.wrappedBuffer(requestBytes));
         request.headers().set(HttpHeaderNames.HOST, host);
-        request.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderNames.CONNECTION);
+        request.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
         request.headers().set(HttpHeaderNames.CONTENT_LENGTH, request.content().readableBytes());
 
         this.channel.writeAndFlush(request).sync();

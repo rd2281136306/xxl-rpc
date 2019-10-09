@@ -9,13 +9,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * @author xuxueli 2018-10-19
  */
 public abstract class ConnectClient {
     protected static transient Logger logger = LoggerFactory.getLogger(ConnectClient.class);
-
 
     // ---------------------- iface ----------------------
 
@@ -49,8 +49,8 @@ public abstract class ConnectClient {
 
     }
 
-    private static volatile ConcurrentHashMap<String, ConnectClient> connectClientMap;        // (static) alread addStopCallBack
-    private static volatile ConcurrentHashMap<String, Object> connectClientLockMap = new ConcurrentHashMap<>();
+    private static volatile ConcurrentMap<String, ConnectClient> connectClientMap;        // (static) alread addStopCallBack
+    private static volatile ConcurrentMap<String, Object> connectClientLockMap = new ConcurrentHashMap<>();
     private static ConnectClient getPool(String address, Class<? extends ConnectClient> connectClientImpl,
                                          final XxlRpcReferenceBean xxlRpcReferenceBean) throws Exception {
 
@@ -107,8 +107,13 @@ public abstract class ConnectClient {
 
             // set pool
             ConnectClient connectClient_new = connectClientImpl.newInstance();
-            connectClient_new.init(address, xxlRpcReferenceBean.getSerializer(), xxlRpcReferenceBean.getInvokerFactory());
-            connectClientMap.put(address, connectClient_new);
+            try {
+                connectClient_new.init(address, xxlRpcReferenceBean.getSerializer(), xxlRpcReferenceBean.getInvokerFactory());
+                connectClientMap.put(address, connectClient_new);
+            } catch (Exception e) {
+                connectClient_new.close();
+                throw e;
+            }
 
             return connectClient_new;
         }

@@ -38,11 +38,39 @@ public class MinaServer extends Server {
 			public void run() {
 
 				// param
-				final ThreadPoolExecutor serverHandlerPool = ThreadPoolUtil.makeServerThreadPool(MinaServer.class.getSimpleName());
+				final ThreadPoolExecutor serverHandlerPool = ThreadPoolUtil.makeServerThreadPool(
+						MinaServer.class.getSimpleName(),
+						xxlRpcProviderFactory.getCorePoolSize(),
+						xxlRpcProviderFactory.getMaxPoolSize());
 				NioSocketAcceptor acceptor = new NioSocketAcceptor();
 
 				try {
+
+					// heartbeat
+					/*KeepAliveFilter heartBeat = new KeepAliveFilter(new KeepAliveMessageFactory() {
+						@Override
+						public boolean isRequest(IoSession ioSession, Object message) {
+							return Beat.BEAT_ID.equalsIgnoreCase(((XxlRpcRequest) message).getRequestId());
+						}
+						@Override
+						public boolean isResponse(IoSession ioSession, Object message) {
+							return Beat.BEAT_ID.equalsIgnoreCase(((XxlRpcResponse) message).getRequestId());
+						}
+						@Override
+						public Object getRequest(IoSession ioSession) {
+							return Beat.BEAT_PING;
+						}
+						@Override
+						public Object getResponse(IoSession ioSession, Object request) {
+							return Beat.BEAT_PONG;
+						}
+					}, IdleStatus.BOTH_IDLE, KeepAliveRequestTimeoutHandler.CLOSE);
+					heartBeat.setForwardEvent(true);
+					heartBeat.setRequestInterval(10);
+					heartBeat.setRequestTimeout(10);*/
+
 					// start server
+					//acceptor.getFilterChain().addLast("heartbeat", heartBeat);
 					acceptor.getFilterChain().addLast("threadPool", new ExecutorFilter(Executors.newCachedThreadPool()));
 					acceptor.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ProtocolCodecFactory() {
 						@Override
@@ -55,13 +83,13 @@ public class MinaServer extends Server {
 						}
 					}));
 					acceptor.setHandler(new MinaServerHandler(xxlRpcProviderFactory, serverHandlerPool));
-					
-					SocketSessionConfig config = acceptor.getSessionConfig();
-					config.setTcpNoDelay(true);
-					config.setKeepAlive(true);
+
+					SocketSessionConfig socketSessionConfig = acceptor.getSessionConfig();
+					socketSessionConfig.setTcpNoDelay(true);
+					socketSessionConfig.setKeepAlive(true);
 					//config.setReuseAddress(true);
-					config.setSoLinger(-1);
-					config.setIdleTime(IdleStatus.BOTH_IDLE, 10);
+					socketSessionConfig.setSoLinger(-1);
+					socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE, 60);
 					
 					acceptor.bind(new InetSocketAddress(xxlRpcProviderFactory.getPort()));
 
